@@ -1,6 +1,28 @@
 import { Box3, Vector3 } from 'three';
 import { Raycaster } from '../tools/raycaster';
 
+/**
+ * Select类 - 处理DXF对象的选取和取消选取功能
+ * 
+ * 事件说明：
+ * - 'select': 当对象被选中时触发，参数为已选择的对象数组
+ * - 'deselect': 当对象被取消选择时触发，参数为被取消选择的对象数组
+ * 
+ * 使用示例：
+ * ```javascript
+ * const select = new Select(container, camera, dxf);
+ * 
+ * // 监听选择事件
+ * select.on('select', (selectedObjects) => {
+ *   console.log('选中的对象:', selectedObjects);
+ * });
+ * 
+ * // 监听取消选择事件
+ * select.on('deselect', (deselectedObjects) => {
+ *   console.log('取消选择的对象:', deselectedObjects);
+ * });
+ * ```
+ */
 export class Select extends Raycaster {
 	constructor( container, camera, dxf, raycasting = null ) {
 		
@@ -37,18 +59,9 @@ export class Select extends Raycaster {
 		if( event.button === 0 ) {
 			
 			this._isMouseDown = true;
-
-			//if control is pushed start selection box
-			if( event.ctrlKey ) {
-				var rect = event.target.getBoundingClientRect();
-				const x = event.clientX - rect.left;
-				const y = event.clientY - rect.top;
-				
-				this._onSelectionBox = {
-					start: { x: x, y: y },
-					end: { x: x, y: y }
-				};
-			}
+			this._ctrlPressed = event.ctrlKey;
+			
+			//no longer start selection box on ctrl+click - we'll use ctrl for multi-select
 		}
 	}
 
@@ -62,50 +75,41 @@ export class Select extends Raycaster {
 
 		event.preventDefault();
 
-		//deselect all
-		this.deselectAll();
+		//if not holding ctrl, deselect all first
+		if( !this._ctrlPressed ) {
+			this.deselectAll();
+		}
 
-
-		//TRY TO SELECT USING SELECTION BOX
+		var rect = event.target.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		
+		//SELECT BY RAYCASTING		
+		this.pointer.x = ( x / this.container.clientWidth ) * 2 - 1;
+		this.pointer.y = - ( y / this.container.clientHeight ) * 2 + 1;
+		
+		const intersected = await this.raycast.raycast( this.pointer );
 		let ss = null;
-		if( this._onSelectionBox ) {
-			const objs = this._getEntitiesUnderSelectionBox( this._onSelectionBox.start, this._onSelectionBox.end );
-			if( objs ) ss = objs;
-		} else {
-
-			var rect = event.target.getBoundingClientRect();
-			const x = event.clientX - rect.left;
-			const y = event.clientY - rect.top;
-			
-			//SELECT BY RAYCASTING		
-			this.pointer.x = ( x / this.container.clientWidth ) * 2 - 1;
-			this.pointer.y = - ( y / this.container.clientHeight ) * 2 + 1;
-			
-			const intersected = await this.raycast.raycast( this.pointer );
-			if( intersected )  ss = intersected.object.parent;
-		}
-
+		if( intersected ) ss = intersected.object;
+		
 		if( ss ) {
-			this.select( ss );
-			await this.trigger( 'select', ss );
+			//if ctrl is pressed and object is already selected, deselect it
+			if( this._ctrlPressed && this._isSelected( ss ) ) {
+				this.deselect( ss );
+			} else {
+				this.select( ss );
+			}
+			await this.trigger( 'select', this.selecteds );
+		// } else {
+		// 	await this.trigger( 'select', this.selecteds );
 		}
 
-		//CLEAN UP
-		this._removeSelectionBox();
-		this._onSelectionBox = null;
+		//reset ctrl state
+		this._ctrlPressed = false;
 	}
 
 	async _onPointerMove( event ) {
-
-		if( this._onSelectionBox ) {
-			var rect = event.target.getBoundingClientRect();
-			const x = event.clientX - rect.left;
-			const y = event.clientY - rect.top;
-
-			this._onSelectionBox.end = { x: x, y: y };
-			this.drawSelectionBox( this._onSelectionBox.start, this._onSelectionBox.end, rect );
-			return;
-		} else if( this._isMouseDown ) {
+		if( this._isMouseDown ) {
 			this._isMouseMoving = true;
 		}
 	}
@@ -209,5 +213,23 @@ export class Select extends Raycaster {
 			this.selecteds.forEach( s => s.parent.remove( s ) );
 			this.selecteds.length = 0;
 		}
+		// 触发deselect事件，通知所有已取消选择的对象
+		this.trigger( 'deselect', [] );
+	}
+
+	deselect( obj ) {
+		const index = this.selecteds.findIndex( s => s.id === obj.id );
+		if( index !== -1 ) {
+			const selected = this.selecteds[index];
+			selected.parent.remove( selected );
+			this.selecteds.splice( index, 1 );
+			
+			// 触发deselect事件，通知被取消选择的对象
+			this.trigger( 'deselect', [obj] );
+		}
+	}
+
+	_isSelected( obj ) {
+		return this.selecteds.some( s => s.id === obj.id );
 	}
 }

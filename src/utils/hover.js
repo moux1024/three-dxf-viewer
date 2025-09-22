@@ -32,7 +32,7 @@ export class Hover extends Raycaster {
 
 		this.removeHover();
 		if( intersected )  {
-			const obj = intersected.object.parent;
+			const obj = intersected.object;
 			if( !obj.userData ) return;
 
 			this.hover( obj );			

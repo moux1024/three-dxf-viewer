@@ -36,21 +36,23 @@ export class DXFViewer {
 	 * Returns a Three.js object with the dxf data. Calls to getFromPath method internally
 	 * @param file {File} dxf file to load.
 	 * @param fontPath {string} path to the font file.
-     * @return {THREE.Group} object with the dxf data
+	 * @param cacheControl {string} optional Cache-Control header value for the request
+    * @return {THREE.Group} object with the dxf data
 	*/
-	async getFromFile( file, fontPath ) {
+	async getFromFile( file, fontPath, cacheControl ) {
 		let path = URL.createObjectURL( file );
 
-		return await this.getFromPath( path, fontPath );
+		return await this.getFromPath( path, fontPath, cacheControl );
 	}
 
 	/**
 	 * Returns a Three.js object with the dxf data.
 	 * @param path path to a dxf file to load. Type: String
 	 * @param fontPath path to the font file. Type: string	 
-     * @return THREE.Group object with the dxf data
+	 * @param cacheControl optional Cache-Control header value for the request
+    * @return THREE.Group object with the dxf data
 	*/
-	async getFromPath( path, fontPath ) {
+	async getFromPath( path, fontPath, cacheControl ) {
 
 		await this._loadFont( fontPath );
 
@@ -66,7 +68,13 @@ export class DXFViewer {
 			}
             
 			//load file
-			let rawdata = await fetch( path );
+			let rawdata;
+			try{
+				rawdata = await fetch( path, cacheControl ? { headers: { 'Cache-Control': cacheControl } } : undefined );
+			}
+			catch( e ){
+				return null;
+			}
 			if( rawdata.status !== 200 ) return null;            
 			let file = await rawdata.text();
 
